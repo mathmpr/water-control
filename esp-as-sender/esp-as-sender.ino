@@ -14,7 +14,10 @@ String responseString;
 String fullUrl;
 
 const int TX = 1;
+const int RX = 3;
 const int GPIO0 = 0;
+const int GPIO2 = 2;
+SoftwareSerial ss(RX, -1);
 
 char ssid[20];
 char password[15];
@@ -26,7 +29,6 @@ const int WATCHDOG_INTERVAL = 10000;
 struct Timer {
   char key[20];
   unsigned long lastTick;
-
   int interval;
   void (*callback)();
 };
@@ -101,7 +103,6 @@ void run() {
   }
 }
 
-int maxAttempts;
 int maxNoInternet;
 int begin;
 int noInternet;
@@ -110,29 +111,21 @@ bool underTry;
 bool doingRequest = false;
 unsigned long ping = 0;
 unsigned long noReset = 0;
-long pingTimeout = 20000;
+long pingTimeout = 7000;
 
 int offDistance = 60;
 int onDistance = 200;
 int minutes = 15;
 bool status = true;
 int interval = 5000;
-unsigned long limit = 0;
-unsigned long limitCount = 0;
 bool reset = false;
 
-String profile = "asker";
+String profile = "sender";
 float distance = 0;
-float water = 0; 
+String water = "";
 bool onRequest = false;
 
 void makeRequest() {
-  if (status) {
-    limitCount += interval;
-  }
-  if (status && limitCount >= limit) {
-    digitalWrite(TX, HIGH);
-  }
   if (doingRequest) {
     return;
   }
@@ -140,7 +133,7 @@ void makeRequest() {
     return;
   }
   if(!onRequest && profile.length() > 0) {
-    requestAsker();
+    requestSender();
   }
 }
 
@@ -155,39 +148,26 @@ void getConfig() {
   mapReceiver.add("wb", "gc");
   mapReceiver.add("v", profile.c_str());
   request();
-  if (mapReceiver.get("wb").length() > 0) {
-    minutes = mapReceiver.get("m").toInt();
-    limit = 1000 * 60 * minutes;
-  }
   if (!configured) {
     setTimer("get-config", (1000 * 60 * 5) + 2000);
     configured = true;
   }
 }
 
-void requestAsker() {
+void requestSender() {
   ping = millis();
   mapReceiver.clear();
-  mapReceiver.add("wb", "s");
+  mapReceiver.add("wb", "tn");
   mapReceiver.add("iam", profile.c_str());
   mapReceiver.add("p", String(ping).c_str());
-  if (status && limitCount >= limit) {
-    mapReceiver.add("fo", "t");
-    digitalWrite(TX, HIGH);
-    limitCount = 0;
-    status = false;
+  mapReceiver.add("d", String(distance).c_str());
+  mapReceiver.add("w", "t");
+  if (water.length() > 0) {
+    mapReceiver.add("wa", water.c_str());
   }
+  distance = 0;
+  water = String();
   request();
-  if (mapReceiver.get("wb").length() > 0) {
-    if (mapReceiver.get("s") == "t") {
-      status = true;
-      digitalWrite(TX, LOW);
-    } else {
-      status = false;
-      limitCount = 0;
-      digitalWrite(TX, HIGH);
-    }
-  }
 }
 
 void request() {
@@ -258,24 +238,49 @@ void connectToWifi() {
   }
 }
 
+void resetArduino() {
+  long currentTime = millis();
+  if ((currentTime - noReset) > pingTimeout && connected && hasInternet) {
+    noReset = currentTime;
+    digitalWrite(GPIO0, LOW);
+    delay(150);
+    digitalWrite(GPIO0, HIGH);
+  }
+}
+
+String receive = String();
+
+void readWater() {
+  if (ss.available()) {
+    String receive = ss.readStringUntil('\n');
+    int start = receive.indexOf('<');
+    int end = receive.indexOf('>');
+    if (start > -1 && end > -1) {
+      water = receive.substring(start + 1, end);
+      noReset = millis();
+    }
+    receive = String();
+  }
+}
+
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
-  pinMode(TX, OUTPUT);
-  digitalWrite(TX, HIGH);
+  pinMode(GPIO0, OUTPUT);
+  digitalWrite(GPIO0, HIGH);
 
-  limit = 1000 * 60 * minutes;
-  limitCount = limit;
+  Serial.begin(9600);
+  ss.begin(9600);
+
   hasInternet = false;
   connected = false;
-  maxAttempts = 20;
   maxNoInternet = 5;
   begin = 0;
   noInternet = 0;
   underTry = false;
   configured = false;
-  
+
   delay(1000);
 
   setTimer("blink", 0, performBlink);
@@ -285,6 +290,8 @@ void setup() {
   setTimer("check-internet", 10000, checkInternet);
   setTimer("make-request", 5000, makeRequest);
   setTimer("get-config", 8000, getConfig);
+  setTimer("reset-arduino", 5000, resetArduino);
+  setTimer("read-water", 1000, readWater);
 
   ESP.wdtDisable();
   ESP.wdtEnable(WDTO_8S);
@@ -294,4 +301,3 @@ void loop() {
   ESP.wdtFeed();
   run();
 }
-

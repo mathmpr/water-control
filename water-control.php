@@ -76,11 +76,12 @@ try {
 
 date_default_timezone_set('America/Sao_Paulo');
 
+$offLevel = 250;
+
 if (php_sapi_name() == "cli") {
     $times = [
-        "06:30:00",
-        "12:00:00",
-        "18:00:00",
+        "06:00:00",
+        "17:00:00",
     ];
     $now = new DateTime();
     $lock = null;
@@ -120,7 +121,7 @@ $config = [
         "fd" => 60,
     ],
     "asker"  => [
-        "m" => 35,
+        "m" => 40,
     ]
 ];
 
@@ -141,16 +142,6 @@ if ($secret == "secret") {
     $iam = $get["iam"] ?? null;
     $r = $get["r"] ?? null;
     $p = $get["p"] ?? null;
-
-    if ($r && $iam) {
-        $resets = getSet($iam . '.resets');
-        if (empty($resets)) {
-            getSet($iam . '.resets', 1);
-        } else {
-            $resets += 1;
-            getSet($iam . '.resets', $resets);
-        }
-    }
 
     if ($p && $iam) {
         $millis = getSet($iam . '.millis');
@@ -180,16 +171,23 @@ if ($secret == "secret") {
             $response = array_merge($response, $config[$get["v"]]);
             break;
         case "tn":
-            $value = $get["v"];
+            $value = $get["v"] ?? null;
             $d = $get["d"] ?? -1;
             $w = $get["w"] ?? null;
+            $wa = intval($get["wa"]) ?? 0;
+            if ($w) {
+                getSet('wa', $wa);
+                if ($wa > $offLevel) {
+                    $value = "f";
+                }
+            }
             if ($d > -1) {
                 getSet("d", $d);
             }
             if ($forced && $d < 0) {
                 $d = 0;
             }
-            if ($value == "t" && ($d > 1 || $forced || php_sapi_name() == "cli")) {
+            if ($value == "t" && ($d > 1 || $wa || $forced || php_sapi_name() == "cli")) {
                 $response["s"] = "t";
                 getSet("s", "t");
                 $keys = array_keys($data);
@@ -204,10 +202,10 @@ if ($secret == "secret") {
                     $data[$keyTime] = [
                         "action" => 1,
                         "forced" => $forced,
-                        "distance" => $d
+                        "waterSensor" => $wa
                     ];
                 }
-            } else if($value == "f" && (($d > 1 || $forced) || php_sapi_name() == "cli" || !empty($w))){
+            } else if($value == "f" && (($d > 1 || $wa || $forced) || php_sapi_name() == "cli")){
                 $response["s"] = "f";
                 getSet("s", "f");
                 $keys = array_keys($data);
@@ -222,7 +220,7 @@ if ($secret == "secret") {
                     $data[$keyTime] = [
                         "action" => 0,
                         "forced" => $forced,
-                        "distance" => $d,
+                        "waterSensor" => $wa,
                     ];
                 }
             }
@@ -234,28 +232,24 @@ if ($secret == "secret") {
                 $data[$keyTime] = [
                     "action" => 0,
                     "forced" => 1,
-                    "distance" => 0
+                    "waterSensor" => 0
                 ];
                 getSet($key, json_encode($data));
                 getSet("s", "f");
             }
             $response["s"] = getSet("s");
             if (!$iam) {
-                $response["d"] = getSet("d");
+                $response["wa"] = getSet("wa");
                 $response["sender"] = getSet("sender");
                 $response["asker"] = getSet("asker");
-                $response["asker_resets"] = getSet("asker.resets", 0, true);
-                $response["sender_resets"] = getSet("sender.resets", 0, true);
             }
             break;
         case "lr":
             $response["s"] = getSet("s");
             if (!$iam) {
-                $response["d"] = getSet("d");
+                $response["wa"] = getSet("wa");
                 $response["sender"] = getSet("sender");
                 $response["asker"] = getSet("asker");
-                $response["asker_resets"] = getSet("asker.resets", 0, true);
-                $response["sender_resets"] = getSet("sender.resets", 0, true);
             }
             $key = "d" . date("y-m-d");
             $data = json_decode(getSet($key), true) ?? [];
@@ -366,7 +360,7 @@ if ($secret == "secret") {
         <h1>Water Control</h1>
         <button id="force" class="btn btn-danger color-white">Forçar</button>
     </div>
-    <!--h3>Distância entre o sensor e a água: <span id="distance"><?= (getSet("d") / 100) ?>m</span></h3-->
+    <h3>Sensibilidade de água detectada pelo o sensor: <span id="waterSensor"><?= (getSet("wa")) ?></span></h3>
     <table id="results" class="table table-striped">
         <thead>
         <tr>
@@ -386,7 +380,7 @@ if ($secret == "secret") {
             <tr data-key="<?= $time ?>">
                 <td><?= ($otime[0] . ':' . $otime[1] . ':' . $otime[2]) ?></td>
                 <td><?= $value["forced"] ? "Sim" : "Não" ?></td>
-                <!--td><?= ($value["distance"] / 100) ?>m</td-->
+                <!--td><?= ($value["waterSensor"] / 100) ?>m</td-->
                 <td><?= $value["action"] ? "Ligado" : "Desligado" ?></td>
             </tr>
             <?php
@@ -395,8 +389,8 @@ if ($secret == "secret") {
         </tbody>
     </table>
     <div class="info">
-        <p>Ping {sender}: <span id="sender"></span> > Resets: <span id="sender" class="resets"></span></p>
-        <p>Ping {asker}: <span id="asker"></span> > Resets: <span id="asker" class="resets"></span></p>
+        <p>Ping {sender}: <span id="sender"></span></p>
+        <p>Ping {asker}: <span id="asker"></span></p>
     </div>
 </div>
 <script>
@@ -411,9 +405,7 @@ if ($secret == "secret") {
         }
     }).then(response => response.json()).then(data => {
         currentState = data.s;
-        //document.querySelector("#distance").innerHTML = (parseInt(data.d) / 100) + "m";
-        document.querySelector("#asker.resets").innerHTML = data.asker_resets;
-        document.querySelector("#sender.resets").innerHTML = data.sender_resets;
+        document.querySelector("#waterSensor").innerHTML = data.wa;
         if(data.sender) {
             document.querySelector("#sender").innerHTML = formatDate(new Date(data.sender));
         } else {
@@ -497,9 +489,7 @@ if ($secret == "secret") {
             } else {
                 document.querySelector("#asker").innerHTML = "n/a"
             }
-            //document.querySelector("#distance").innerHTML = (parseInt(data.d) / 100) + "m";
-            document.querySelector("#asker.resets").innerHTML = data.asker_resets;
-            document.querySelector("#sender.resets").innerHTML = data.sender_resets;
+            document.querySelector("#waterSensor").innerHTML = data.wa;
             if (data.s === "t") {
                 forceBtn.innerHTML = "Forçar desligamento da bomba";
                 forceBtn.classList.remove("t");
@@ -514,18 +504,18 @@ if ($secret == "secret") {
                 let ntr = document.createElement("tr");
                 let hour = document.createElement("td");
                 let forced = document.createElement("td");
-                let distance = document.createElement("td");
+                let waterSensor = document.createElement("td");
                 let action = document.createElement("td");
                 let t = i.replace('h', '');
                 t = t.split('-');
                 hour.innerHTML = t[0] + ':' + t[1] + ':' + t[2];
                 forced.innerHTML = c['forced'] ? "Sim" : "Não";
                 action.innerHTML = c['action'] ? "Ligado" : "Desligado";
-                // distance.innerHTML = (c['distance'] / 100) + 'm';
+                // waterSensor.innerHTML = (c['waterSensor'] / 100) + 'm';
                 ntr.setAttribute('data-key', i);
                 ntr.append(hour);
                 ntr.append(forced);
-                // ntr.append(distance);
+                // ntr.append(waterSensor);
                 ntr.append(action);
                 results.querySelector('tbody').append(ntr);
             }
