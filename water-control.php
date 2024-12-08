@@ -76,7 +76,7 @@ try {
 
 date_default_timezone_set('America/Sao_Paulo');
 
-$offLevel = 250;
+$offLevel = 285;
 
 if (php_sapi_name() == "cli") {
     $times = [
@@ -120,7 +120,7 @@ $config = [
         "td" => 200,
         "fd" => 60,
     ],
-    "asker"  => [
+    "asker" => [
         "m" => 40,
     ]
 ];
@@ -205,7 +205,7 @@ if ($secret == "secret") {
                         "waterSensor" => $wa
                     ];
                 }
-            } else if($value == "f" && (($d > 1 || $wa || $forced) || php_sapi_name() == "cli")){
+            } else if ($value == "f" && (($d > 1 || $wa || $forced) || php_sapi_name() == "cli")) {
                 $response["s"] = "f";
                 getSet("s", "f");
                 $keys = array_keys($data);
@@ -344,12 +344,23 @@ if ($secret == "secret") {
         }
 
         .info p {
-            margin: 0 5px;
+            margin: 0;
             font-size: 13px;
         }
 
         .info p span {
             color: #007dd6;
+        }
+
+        ._np {
+            font-size: 14px;
+            display: inline-block;
+            text-decoration: none;
+            margin-right: 15px;
+        }
+
+        #info {
+            font-size: 16px;
         }
 
     </style>
@@ -360,19 +371,19 @@ if ($secret == "secret") {
         <h1>Water Control</h1>
         <button id="force" class="btn btn-danger color-white">Forçar</button>
     </div>
-    <h3>Sensibilidade de água detectada pelo o sensor: <span id="waterSensor"><?= (getSet("wa")) ?></span></h3>
+    <h3 id="info">Sensibilidade de água detectada pelo sensor: <span id="waterSensor"><?= (getSet("wa")) ?></span></h3>
     <table id="results" class="table table-striped">
         <thead>
         <tr>
             <th>Hora</th>
             <th>Forçado</th>
-            <!--th>Distância</th-->
+            <th>Sensibilidade</th>
             <th>Ação</th>
         </tr>
         </thead>
         <tbody>
         <?php
-        $key = "d" . date("y-m-d");
+        $key = "d" . ($get['date'] ?? date("y-m-d"));
         $data = json_decode(getSet($key), true) ?? [];
         foreach ($data as $time => $value) {
             $otime = explode("-", str_replace('h', '', $time));
@@ -380,7 +391,7 @@ if ($secret == "secret") {
             <tr data-key="<?= $time ?>">
                 <td><?= ($otime[0] . ':' . $otime[1] . ':' . $otime[2]) ?></td>
                 <td><?= $value["forced"] ? "Sim" : "Não" ?></td>
-                <!--td><?= ($value["waterSensor"] / 100) ?>m</td-->
+                <td><?= ($value["waterSensor"]) ?></td>
                 <td><?= $value["action"] ? "Ligado" : "Desligado" ?></td>
             </tr>
             <?php
@@ -388,6 +399,26 @@ if ($secret == "secret") {
         ?>
         </tbody>
     </table>
+    <p>
+        <?php
+        $timestamp = $get['date'] ?? time();
+        $currentDate = $get['date'] ?? date("y-m-d");
+        if (is_string($timestamp)) {
+            $currentDate = DateTime::createFromFormat('y-m-d', $timestamp)->format('Y-m-d');
+            $timestamp = strtotime($currentDate);
+            $currentDate = date("y-m-d", $timestamp);
+        }
+        ?>
+        <a class="_np" href="/water-control.php?date=<?= date('y-m-d', strtotime('yesterday', $timestamp)) ?>">Previous day</a>
+        <?php
+        if ($currentDate !== date("y-m-d")) {
+            ?>
+            <a class="_np" href="/water-control.php?date=<?= date('y-m-d') ?>">Go for today</a>
+            <a class="_np" href="/water-control.php?date=<?= date('y-m-d', strtotime('tomorrow', $timestamp)) ?>">Next day</a>
+            <?php
+        }
+        ?>
+    </>
     <div class="info">
         <p>Ping {sender}: <span id="sender"></span></p>
         <p>Ping {asker}: <span id="asker"></span></p>
@@ -406,7 +437,7 @@ if ($secret == "secret") {
     }).then(response => response.json()).then(data => {
         currentState = data.s;
         document.querySelector("#waterSensor").innerHTML = data.wa;
-        if(data.sender) {
+        if (data.sender) {
             document.querySelector("#sender").innerHTML = formatDate(new Date(data.sender));
         } else {
             document.querySelector("#sender").innerHTML = "n/a"
@@ -453,9 +484,11 @@ if ($secret == "secret") {
                             forceBtn.classList.remove("f");
                             forceBtn.classList.add("t");
                         }
-                    }, 1500);
+                    }, 10000);
                 });
             }
+        } else {
+            alert('Aguarde alguns segundos até poder clicar no botão novamente.')
         }
     });
 
@@ -479,7 +512,7 @@ if ($secret == "secret") {
             }
         }).then(response => response.json()).then(data => {
             currentState = data.s;
-            if(data.sender) {
+            if (data.sender) {
                 document.querySelector("#sender").innerHTML = formatDate(new Date(data.sender));
             } else {
                 document.querySelector("#sender").innerHTML = "n/a"
@@ -511,11 +544,11 @@ if ($secret == "secret") {
                 hour.innerHTML = t[0] + ':' + t[1] + ':' + t[2];
                 forced.innerHTML = c['forced'] ? "Sim" : "Não";
                 action.innerHTML = c['action'] ? "Ligado" : "Desligado";
-                // waterSensor.innerHTML = (c['waterSensor'] / 100) + 'm';
+                waterSensor.innerHTML = c['waterSensor'];
                 ntr.setAttribute('data-key', i);
                 ntr.append(hour);
                 ntr.append(forced);
-                // ntr.append(waterSensor);
+                ntr.append(waterSensor);
                 ntr.append(action);
                 results.querySelector('tbody').append(ntr);
             }
