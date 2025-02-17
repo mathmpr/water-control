@@ -76,7 +76,7 @@ try {
 
 date_default_timezone_set('America/Sao_Paulo');
 
-$offLevel = 285;
+$offLevel = 150;
 
 if (php_sapi_name() == "cli") {
     $times = [
