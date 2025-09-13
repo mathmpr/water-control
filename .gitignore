@@ -1,4 +1,4 @@
-esp-as-asker/config.h
-esp-as-sender/config.h
-esp/config.h
+*/config.h
 .uri
+/.idea
+alexa.php

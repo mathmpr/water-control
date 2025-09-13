@@ -1,0 +1,35 @@
+<script src="/js/libs/jquery.min.js"></script>
+<script src="/js/libs/bootstrap.bundle.min.js"></script>
+<script src="/js/libs/toastr.min.js"></script>
+<script src="/js/libs/axios.min.js"></script>
+<% if (flash.success && flash.success.length) { %>
+    <div class="flash alert" data-type="success">
+        <% flash.success.forEach(msg => { %>
+            <div><%= msg %></div>
+        <% }) %>
+    </div>
+<% } %>
+
+<% if (flash.error && flash.error.length) { %>
+    <div class="flash alert" data-type="danger">
+        <% flash.error.forEach(msg => { %>
+            <div><%= msg %></div>
+        <% }) %>
+    </div>
+<% } %>
+<script>
+    $(document).ready(function () {
+        $('.flash.alert').each(function () {
+            let type = $(this).attr('data-type');
+            let messages = $(this).children('div');
+            messages.each(function () {
+                toastr[type]($(this).text());
+            });
+        });
+    });
+</script>
+<script>
+    if (localStorage.getItem('token')) {
+        axios.defaults.headers.common['Authorization'] = 'Bearer ' + localStorage.getItem('token');
+    }
+</script>
