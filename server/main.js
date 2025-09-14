@@ -116,6 +116,7 @@ let firstActive = false;
 let oldValueStatus;
 
 async function toggleWaterFn(value, user, triggerType, income = null, detect = null) {
+    value = !!value;
     if (!value) {
         alreadySetIncome = false;
         firstActive = false;
@@ -124,7 +125,7 @@ async function toggleWaterFn(value, user, triggerType, income = null, detect = n
         oldValueStatus = value;
     }
     waterPumpStatus = value;
-    if (user.username !== 'asker' && value) {
+    if (user.username !== 'asker') {
         aedes.publish({
             topic: toggleWaterTopic,
             payload: waterPumpStatus ? '1' : '0'
@@ -255,12 +256,10 @@ aedes.on('publish', async (packet, client) => {
 
     if (topic === onOffWaterTopic) {
         const triggerType = payload.shift();
-        const value = parseInt(payload.shift());
+        const value = !!(parseInt(payload.shift()));
         console.log(oldValueStatus, value, triggerType, who);
         // avoid republish the same status for concurrent clients publishing at the same time
-        if (oldValueStatus !== value) {
-            oldValueStatus = value;
-        } else {
+        if (oldValueStatus === value) {
             return;
         }
         console.log("Try to: ", !!value , " by ", allowed[secret].username, " with ", triggerType);
