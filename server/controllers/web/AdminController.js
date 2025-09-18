@@ -4,9 +4,6 @@ const moment = require('moment-timezone');
 module.exports = {
     index: async (req, res) => {
 
-        let today = new Date();
-        let yyyymmdd = today.getFullYear() + '-' + (((today.getMonth() + 1) + "").padStart(2, '0')) + '-' + today.getDate();
-
         let dayStart = moment().tz("America/Sao_Paulo").startOf('day');
         dayStart.add(3, 'hours');
         let fromDate = dayStart.format("YYYY-MM-DD HH:mm:ss");

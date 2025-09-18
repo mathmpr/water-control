@@ -1,26 +1,27 @@
 #include <WiFi.h>
 #include <Arduino.h>
-#include <Ticker.h>
+#include <SimpleTimer.h>
 #include "config.h"
 #include "esp_task_wdt.h"
 #include <AsyncMqttClient.h>
 
 #define LED_BUILTIN 2
 
-Ticker blinkTicker;
-Ticker waterDetectTicker;
-Ticker waterIncomeTicker;
-Ticker keepAliveTicker;
-Ticker mqttConnectTicker;
 AsyncMqttClient mqtt;
+
+SimpleTimer waterDetectTimer;
+SimpleTimer waterIncomeTimer;
+SimpleTimer keepAliveTimer;
+SimpleTimer mqttConnectTimer;
+SimpleTimer wifiConnectTimer;
 
 char ssid[32];
 char password[65];
 char payload[85];
 
 bool connected = false;
+bool connecting = false;
 bool mqttConnected = false;
-bool ledState = HIGH;
 int Nsamples = 16;
 
 const char* detectWaterTopic = "detect/water";
@@ -31,12 +32,18 @@ const char* keepAliveTopic = "keep/alive";
 const int waterDetectSensor = 34;
 int sendDetectAt = 300;
 long waterDetect;
-volatile bool detectFlag = false;
 
 const int waterIncomeSensor = 35;
 int sendIncomeAt = 250;
 long waterIncome;
-volatile bool incomeFlag = false;
+
+void offLed() {
+  digitalWrite(LED_BUILTIN, LOW);
+}
+
+void onLed() {
+  digitalWrite(LED_BUILTIN, HIGH);
+}
 
 void connectToMqtt() {
   if(connected){
@@ -55,11 +62,12 @@ void disconnectMqtt() {
 }
 
 void connectToWifi() {
-  if (connected) {
+  Serial.println("Im alive!");
+  if (connected || connecting) {
     return;
   }
+  connecting = true;
   bool found = false;
-  WiFi.disconnect();
   int n = WiFi.scanNetworks();
   if (n != 0) {
     for (int i = 0; i < n; ++i) {
@@ -71,25 +79,30 @@ void connectToWifi() {
           found = true;
           break;
         }
+        yield();
       }
       if (found) {
         break;
       }
+      yield();
     }  
   }
+  yield();
   WiFi.scanDelete();
+  connecting = false;
 }
 
 void onWiFiEvent(arduino_event_id_t event, arduino_event_info_t info)
 {
   if(event == ARDUINO_EVENT_WIFI_STA_GOT_IP){
+    Serial.println("Got ip");
     connected = true;
-    blinkTicker.detach();
-    digitalWrite(LED_BUILTIN, HIGH);
+    connecting = false;
+    onLed();
   } else if(event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED){
+    Serial.println("Disconnected");
     connected = false;
-    digitalWrite(LED_BUILTIN, LOW);
-    connectToWifi();
+    offLed();
   }
 }
 
@@ -124,29 +137,41 @@ void incomeWater() {
   }
 }
 
-void IRAM_ATTR detectWaterISR() {
-  detectFlag = true;
+void connectMqttFn() {
+  if (connected && !mqttConnected) {
+    connectToMqtt();
+  }
 }
 
-void IRAM_ATTR incomeWaterISR() {
-  incomeFlag = true;
+void keepAliveFn() {
+  if (mqttConnected) {
+    snprintf(payload, sizeof(payload), "%s:%s", secretKey, iam);
+    mqtt.publish(keepAliveTopic, 0, false, payload);
+  }
 }
 
 void setup() {
 
   Serial.begin(9600);
 
+  delay(500);
+
+  Serial.println("Starting");
+
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
-
-  waterDetectTicker.attach(5, detectWaterISR);
-  waterIncomeTicker.attach(17, incomeWaterISR);
 
   mqtt.setServer(mqttServer, mqttPort);
   mqtt.onConnect([](bool sessionPresent){
     mqttConnected = true;
     Serial.println("MQTT conectado!");
-    mqtt.subscribe("blink/led", 0);
+    onLed();
+  });
+
+  mqtt.onDisconnect([](AsyncMqttClientDisconnectReason reason) {
+    Serial.println("MQTT desconectado!");
+    mqttConnected = false;
+    offLed();
   });
 
   mqtt.onMessage([]
@@ -168,41 +193,29 @@ void setup() {
     }
   });
 
-  mqtt.onDisconnect([](AsyncMqttClientDisconnectReason reason) {
-    Serial.println("MQTT desconectado!");
-    mqttConnected = false;
-  });
-
   WiFi.mode(WIFI_STA);
   WiFi.onEvent(onWiFiEvent);
+  WiFi.disconnect();
+
+  waterDetectTimer.setInterval(5000, detectWater);
+  waterIncomeTimer.setInterval(16500, incomeWater);
+  keepAliveTimer.setInterval(8300, keepAliveFn);
+  mqttConnectTimer.setInterval(7450, connectMqttFn);
+  wifiConnectTimer.setInterval(12500, connectToWifi);
+
+  delay(500);
 
   connectToWifi();
-
-  keepAliveTicker.attach(8, []() {
-    if (mqttConnected) {
-      snprintf(payload, sizeof(payload), "%s:%s", secretKey, iam);
-      mqtt.publish(keepAliveTopic, 0, false, payload);
-    }
-  });
-
-  mqttConnectTicker.attach(5, []() {
-    if (connected && !mqttConnected) {
-      connectToMqtt();
-    }
-  });
 
   esp_task_wdt_init(10, true);
   esp_task_wdt_add(NULL); 
 }
 
 void loop() {
-  if (detectFlag) {
-    detectFlag = false;
-    detectWater();
-  }
-  if (incomeFlag) {
-    incomeFlag = false;
-    incomeWater();
-  }
+  waterDetectTimer.run();
+  waterIncomeTimer.run();
+  keepAliveTimer.run();
+  mqttConnectTimer.run();
+  wifiConnectTimer.run();
   esp_task_wdt_reset();
 }

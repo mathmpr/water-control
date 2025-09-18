@@ -8,7 +8,8 @@ const setToken = async (user, res) => {
     });
     user.token = token;
     await User.query().patchAndFetchById(user.id, {
-        token: token
+        token: token,
+        alexa_2fa: Math.floor(1000 + Math.random() * 9000).toString(),
     });
     res.cookie('token', token, { httpOnly: true, secure: true });
     res.json({ token, user: { id: user.id, email: user.email } });

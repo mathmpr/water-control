@@ -12,6 +12,7 @@ const net = require('net');
 const http = require('http');
 const ws = require('websocket-stream');
 const moment = require('moment-timezone');
+const fs = require('fs');
 
 const User = require('./models/User');
 const EventLogs = require('./models/EventLogs');
@@ -61,6 +62,8 @@ app.use((req, res, next) => {
 const globals = {
     askerPing: null,
     senderPing: null,
+    askerDc: null,
+    senderDc: null,
 };
 
 app.use((req, res, next) => {
@@ -89,12 +92,12 @@ httpServer.listen(1888, () => {
 const secretKey = process.env.SECRET_KEY;
 const iam = process.env.IAM;
 
-const hours = [
+let hours = [
     "08:00", "17:00"
 ];
 
-const askerConfig = "15";
-const senderConfig = "300:300";
+let askerConfig = "15";
+let senderConfig = "300:300";
 
 const toggleWaterTopic = "toggle/water";
 const onOffWaterTopic = "on_off/water";
@@ -115,7 +118,7 @@ let alreadySetIncome = false;
 let firstActive = false;
 let oldValueStatus;
 
-async function toggleWaterFn(value, user, triggerType, income = null, detect = null) {
+async function toggleWaterFn(value, user, triggerType, income = null, detect = null, addLog = true) {
     value = !!value;
     if (!value) {
         alreadySetIncome = false;
@@ -131,15 +134,21 @@ async function toggleWaterFn(value, user, triggerType, income = null, detect = n
             payload: waterPumpStatus ? '1' : '0'
         });
     }
-    console.log('Published to', toggleWaterTopic, 'the value:', waterPumpStatus ? '1' : '0');
-    await addRowLog(user, value, triggerType, income, detect);
-    console.log('ROW saved and sent');
+    if (addLog) {
+        await addRowLog(user, value, triggerType, income, detect);
+    }
     publishStatus();
 }
 
 async function publishers() {
     let user = await User.query().findOne({token: secretKey});
     const hour = moment().tz("America/Sao_Paulo").format("HH:mm");
+
+    let config = JSON.parse(fs.readFileSync('./config.json').toString());
+    hours = config.hours;
+    askerConfig = config.asker;
+    senderConfig = config.sender;
+
     if (hours.includes(hour) && user) {
         await toggleWaterFn(true, user, 'auto');
     }
@@ -180,7 +189,6 @@ setInterval(async () => {
             ticks++;
         }
         if (ticks >= 2) {
-            console.log("Auto turn off after", diffInMinutes, "minutes");
             await toggleWaterFn(false, firstActive.user, 'auto');
         }
     }
@@ -210,6 +218,8 @@ function publishStatus() {
             status: waterPumpStatus,
             askerPing: globals.askerPing ? globals.askerPing : null,
             senderPing: globals.senderPing ? globals.senderPing : null,
+            askerDc: globals.askerDc ? globals.askerDc : 0,
+            senderDc: globals.senderDc ? globals.senderDc : 0,
         })
     })
 }
@@ -257,24 +267,38 @@ aedes.on('publish', async (packet, client) => {
     if (topic === onOffWaterTopic) {
         const triggerType = payload.shift();
         const value = !!(parseInt(payload.shift()));
-        console.log(oldValueStatus, value, triggerType, who);
         // avoid republish the same status for concurrent clients publishing at the same time
         if (oldValueStatus === value) {
             return;
         }
-        console.log("Try to: ", !!value , " by ", allowed[secret].username, " with ", triggerType);
         await toggleWaterFn(!!value, allowed[secret], triggerType);
     } else if (topic === getStatusTopic) {
         publishStatus();
     }
     if (topic === keepAliveTopic) {
         let key = who + 'Ping';
+        let disconnected = who + 'Dc';
+        let lastPing = globals[key];
+        if (lastPing) {
+            let diff = moment().diff(moment(lastPing, "HH:mm:ss"), 'seconds');
+            if (diff >= 60) {
+                if (who === 'asker') {
+                    aedes.publish({
+                        topic: toggleWaterTopic,
+                        payload: waterPumpStatus ? '1' : '0'
+                    });
+                }
+                globals[disconnected] = globals[disconnected] ? globals[disconnected] + 1 : 1;
+            }
+        }
         globals[key] = moment().tz("America/Sao_Paulo").format("HH:mm:ss");
         aedes.publish({
             topic: onKeepAliveTopic,
             payload: JSON.stringify({
                 askerPing: globals.askerPing ? globals.askerPing : null,
                 senderPing: globals.senderPing ? globals.senderPing : null,
+                askerDc: globals.askerDc ? globals.askerDc : 0,
+                senderDc: globals.senderDc ? globals.senderDc : 0,
             })
         });
     } else if (topic === detectWaterTopic) {

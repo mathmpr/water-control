@@ -1,18 +1,20 @@
 #include <ESP8266WiFi.h>
 #include <Arduino.h>
 #include <AsyncMqttClient.h>
-#include <Ticker.h>
+#include <SimpleTimer.h>
 #include "config.h"
 
 #define LED_PIN 2
 #define RX 3
 #define TX 1
+#define REAL_TX_PIN 1
 
 WiFiEventHandler gotIpEventHandler;
 WiFiEventHandler disconnectedEventHandler;
 
-Ticker keepAliveTicker;
-Ticker mqttConnectTicker;
+SimpleTimer keepAliveTimer;
+SimpleTimer mqttConnectTimer;
+SimpleTimer wifiConnectTimer;
 
 bool enabledWaterPump = false;
 bool sendItToServer = false;
@@ -37,10 +39,25 @@ const char* getConfigTopic = "get_config/asker";
 const char* keepAliveTopic = "keep/alive";
 
 bool connected = false;
+bool connecting = false;
 bool mqttConnected = false;
 unsigned long pumpStart = 0;
 
 AsyncMqttClient mqttClient;
+
+void onLed() {
+  digitalWrite(LED_PIN, LOW);
+}
+
+void offLed() {
+  digitalWrite(LED_PIN, HIGH);
+}
+
+void print(const char* message) {
+  if (TX != REAL_TX_PIN) {
+    Serial.println(message);
+  }
+}
 
 void toggleWaterPump(bool newStatus) {
   enabledWaterPump = newStatus;
@@ -57,6 +74,8 @@ void publishStatus(bool status, const char* type) {
 }
 
 void onMqttConnect(bool sessionPresent) {
+  print("MQTT On!");
+  onLed();
   mqttConnected = true;
   mqttClient.subscribe(toggleWaterTopic, 0);
   mqttClient.subscribe(getConfigTopic, 0);
@@ -66,8 +85,9 @@ void onMqttConnect(bool sessionPresent) {
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+  print("MQTT Off!");
+  offLed();
   mqttConnected = false;
-  toggleWaterPump(false);
 }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties,
@@ -75,6 +95,9 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 
   String msg;
   for (size_t i = 0; i < len; i++) msg += payload[i];
+
+  print(topic);
+  print(msg.c_str());
 
   if (strcmp(topic, toggleWaterTopic) == 0) {
     if (millis() - (unsigned long)lastLocalToggle < IGNORE_MQTT_AFTER_LOCAL_MS) {
@@ -87,12 +110,15 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 }
 
 void connectToWifi() {
-  if (connected) {
+  if (connected || connecting) {
     return;
   }
+  print("Try to connect!");
+  connecting = true;
   bool found = false;
-  WiFi.disconnect();
   int n = WiFi.scanNetworks();
+  snprintf(payload, sizeof(payload), "Number of wifi's: %d", n);
+  print(payload);
   if (n != 0) {
     for (int i = 0; i < n; ++i) {
       for(int j = 0; j < size; j++) {
@@ -107,9 +133,13 @@ void connectToWifi() {
       if (found) {
         break;
       }
+      yield();
     }  
   }
   WiFi.scanDelete();
+  print("Delete scan");
+  yield();
+  connecting = false;
 }
 
 void IRAM_ATTR handleButton() {
@@ -122,13 +152,33 @@ void IRAM_ATTR handleButton() {
   }
 }
 
+void connectMqtt() {
+  if (connected && !mqttConnected) {
+    mqttClient.connect();
+  }
+}
+
+void publishKeepAlive() {
+  if (mqttConnected) {
+    snprintf(payload, sizeof(payload), "%s:%s", secretKey, iam);
+    mqttClient.publish(keepAliveTopic, 0, false, payload);
+  }
+}
+
 void setup() {
 
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, HIGH);
+  offLed();
 
-  pinMode(TX, OUTPUT);
-  digitalWrite(TX, HIGH);
+  if (TX == REAL_TX_PIN) {
+    pinMode(TX, OUTPUT);
+    digitalWrite(TX, HIGH);
+  } else {
+    Serial.begin(9600);
+    delay(1000);
+  }
+
+  print("Starting");
 
   pinMode(RX, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(RX), handleButton, FALLING);
@@ -141,32 +191,25 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
 
-  WiFi.setAutoReconnect(true);
+  WiFi.setAutoReconnect(false);
   WiFi.persistent(false);
 
   gotIpEventHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP& event) {
-    digitalWrite(LED_PIN, LOW);
+    onLed();
     connected = true;
+    connecting = false;
+    print("Got IP");
   });
 
   disconnectedEventHandler = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected& event) {
-    digitalWrite(LED_PIN, HIGH);
+    offLed();
     connected = false;
-    toggleWaterPump(false);
+    print("Disconnected");
   });
 
-  keepAliveTicker.attach(8, []() {
-    if (mqttConnected) {
-      snprintf(payload, sizeof(payload), "%s:%s", secretKey, iam);
-      mqttClient.publish(keepAliveTopic, 0, false, payload);
-    }    
-  });
-
-  mqttConnectTicker.attach(5, []() {
-    if (connected && !mqttConnected) {
-      mqttClient.connect();
-    }
-  });
+  keepAliveTimer.setInterval(8300, publishKeepAlive);
+  mqttConnectTimer.setInterval(5700, connectMqtt);
+  wifiConnectTimer.setInterval(12500, connectToWifi);
 
   connectToWifi();
 
@@ -176,12 +219,16 @@ void setup() {
 
 void loop() {
 
+  keepAliveTimer.run();
+  mqttConnectTimer.run();
+  wifiConnectTimer.run();
+
   /* auto turn off handling */
 
   if (enabledWaterPump && pumpStart == 0) {
     pumpStart = millis();
   }
-  if (enabledWaterPump && ((millis() - pumpStart) > maxEnabledTime * 60000UL)) {
+  if (enabledWaterPump && ((millis() - pumpStart) > (maxEnabledTime * 60000UL))) {
     toggleWaterPump(false);
     pumpStart = 0;
     if (mqttConnected) {
@@ -208,4 +255,6 @@ void loop() {
       }
     }    
   }
+
+  ESP.wdtFeed();
 }

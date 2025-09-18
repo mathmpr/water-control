@@ -22,6 +22,8 @@ class User extends Model {
                 password: {type: 'string'},
                 created_at: {type: 'string'},
                 updated_at: {type: 'string'},
+                alexa_2fa: {type: 'string'},
+                alexa_id: {type: 'string'},
             },
         };
     }
