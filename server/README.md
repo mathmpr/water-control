@@ -1,30 +1,31 @@
-# Monólito em Node
+# Node monolith
 
-A escolha das libs utilizadas nesse monólito foi feita com base na experiência de mercado e na maturidade das mesmas. O objetivo é fornecer uma base sólida para o desenvolvimento de aplicações Node.js.
-A escolha também levou em conta e se inspirou em tecnologias que conheco e que funcionam muito bem.
+The choice of LIBs used in this monolith was made based on the market experience and their maturity. The goal is to provide a solid base for the development of applications node.js.
+The choice also took into account and was inspired by technologies I know and work very well.
 
-- Objection + Knex: ORM e query builder para Node.js, que oferece uma interface simples e poderosa para interagir com bancos de dados SQL. Se assemelha a migrations e eloquente do Yii 2.
-- Express: Framework minimalista para Node.js, que facilita a criação de APIs e aplicações web.
-- Passport: Middleware de autenticação para Node.js, que suporta diversas estratégias de autenticação, como OAuth, JWT e sessões.
-- Dotenv: Biblioteca para carregar variáveis de ambiente a partir de um arquivo `.env`, facilitando a configuração da aplicação.
-- Sqlite3: Driver para SQLite, um banco de dados leve e fácil de usar, ideal para desenvolvimento e testes.
+- Objectation + Knex: ORM and Query Builder for Node.js, which offers a simple and powerful interface to interact with SQL databases. It resembles the migrations and eloquent of YII 2.
+- Express: Minimalist Framework for Node.JS, which facilitates the creation of APIs and web applications.
+- Passport: Authentication Middleware for Node.js, which supports various authentication strategies such as Oauth, JWT and sessions.
+- Dotenv: Library to load environment variables from an `.env` file, facilitating the application configuration.
+- SQLite3: SQLite Driver, a light and easy to use database, ideal for development and testing.
 
-## Instalação
+## Installation
 
 ```bash
 npm install
 ```
 
 ## Configuração
-Crie um arquivo `.env` na raiz do projeto e configure as variáveis de ambiente necessárias. Um exemplo de arquivo `.env` pode ser encontrado em `.env.example`.
+Create a `.env` file at the project root and set the necessary environment variables. An example of a `.env` file can be found in` .env.example`.
 
 ```bash
 cp .env.example .env
 ```
 
 ## Execução
-Para iniciar o servidor, execute o seguinte comando:
+To start the server, run the following command:
 
 ```bash
+npm init-db
 npm start
 ```

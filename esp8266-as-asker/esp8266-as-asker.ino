@@ -21,6 +21,8 @@ bool sendItToServer = false;
 bool valueToSend = false;
 int maxEnabledTime = 20;
 int passedTimeInEnable = 0;
+int numberOfFailedKeepAlives = 0;
+int maxFailedKeepAlives = 30;
 
 volatile bool pressed = false;
 volatile unsigned long lastInterruptTime = 0;
@@ -159,9 +161,15 @@ void connectMqtt() {
 }
 
 void publishKeepAlive() {
-  if (mqttConnected) {
+  if (mqttClient.connected()) {
     snprintf(payload, sizeof(payload), "%s:%s", secretKey, iam);
-    mqttClient.publish(keepAliveTopic, 0, false, payload);
+    uint16_t packetId = mqttClient.publish(keepAliveTopic, 0, false, payload);
+    numberOfFailedKeepAlives += (packetId == 0);
+  } else {
+    numberOfFailedKeepAlives++;
+  }
+  if (numberOfFailedKeepAlives > maxFailedKeepAlives) {
+    ESP.restart();
   }
 }
 
