@@ -6,6 +6,7 @@ const AlexaController = require('../controllers/api/AlexaController');
 const AdminController = require('../controllers/api/AdminController');
 const authMiddleware = require('../middlewares/auth');
 
+router.get('/health', (_req, res) => res.json({ok: true}));
 
 router.post('/sign-in', SignController.signIn);
 router.get('/sign-out', SignController.signOut);
