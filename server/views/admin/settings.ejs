@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
+<head>
+    <%- include('../common/head.ejs', {title: 'Configurações | Water Control'}) %>
+</head>
+<body class="app-view">
+<%- include('common/nav.ejs', {title: 'Configurações', user}) %>
+<div class="main-content">
+    <div class="page-head">
+        <div>
+            <h1 class="page-title">Configurações</h1>
+            <p class="page-subtitle">Parâmetros operacionais enviados aos dispositivos e ao agendador diário.</p>
+        </div>
+        <a href="/admin" class="btn btn-outline-secondary">Voltar aos logs</a>
+    </div>
+
+    <div id="settingsApp" class="panel" data-config='<%- JSON.stringify(config) %>' data-save-url="/api/admin/config">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Controle da bomba</h2>
+                <p class="panel-subtitle">Valores persistidos no banco de dados.</p>
+            </div>
+            <span id="settingsState" class="settings-state">Pronto</span>
+        </div>
+        <div class="panel-body">
+            <form id="settingsForm">
+                <div class="row g-3">
+                    <div class="col-12 col-lg-4">
+                        <label for="asker" class="form-label">Timeout do relé</label>
+                        <div class="input-group">
+                            <input id="asker" name="asker" class="form-control" type="number" min="1" max="240" step="1" required>
+                            <span class="input-group-text">min</span>
+                        </div>
+                        <div class="field-note">Tempo máximo ligado sem sinal de desligamento.</div>
+                    </div>
+
+                    <div class="col-12 col-lg-4">
+                        <label for="sender_income" class="form-label">Sensor de chegada</label>
+                        <input id="sender_income" name="sender_income" class="form-control" type="number" min="1" max="4095" step="1" required>
+                        <div class="field-note">Sensibilidade para detectar água chegando na caixa.</div>
+                    </div>
+
+                    <div class="col-12 col-lg-4">
+                        <label for="sender_top" class="form-label">Sensor do topo</label>
+                        <input id="sender_top" name="sender_top" class="form-control" type="number" min="1" max="4095" step="1" required>
+                        <div class="field-note">Sensibilidade para desligar quando a caixa encher.</div>
+                    </div>
+
+                    <div class="col-12">
+                        <label for="hours" class="form-label">Horários diários</label>
+                        <input id="hours" name="hours" class="form-control" type="text" placeholder="08:00, 17:00" required>
+                        <div class="field-note">Separe os horários por vírgula, espaço ou quebra de linha.</div>
+                    </div>
+                </div>
+
+                <div class="settings-preview">
+                    <div class="settings-preview-item">
+                        <span class="stat-label">asker</span>
+                        <strong id="previewAsker">-</strong>
+                    </div>
+                    <div class="settings-preview-item">
+                        <span class="stat-label">sender</span>
+                        <strong id="previewSender">-</strong>
+                    </div>
+                    <div class="settings-preview-item">
+                        <span class="stat-label">hours</span>
+                        <strong id="previewHours">-</strong>
+                    </div>
+                </div>
+
+                <div class="panel-actions">
+                    <button class="btn btn-primary" type="submit">Salvar configurações</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+</main>
+
+<%- include('../common/end.ejs') %>
+<script>
+    $(document).ready(function () {
+        const settingsApp = $('#settingsApp');
+        const config = settingsApp.data('config');
+        const state = $('#settingsState');
+        const form = $('#settingsForm');
+
+        $('#asker').val(config.asker);
+        $('#sender_income').val(config.sender_income);
+        $('#sender_top').val(config.sender_top);
+        $('#hours').val(config.hours_text);
+
+        function parseHours(value) {
+            return String(value || '')
+                .split(/[\s,;]+/)
+                .map((item) => item.trim())
+                .filter(Boolean);
+        }
+
+        function updatePreview() {
+            const asker = $('#asker').val() || '-';
+            const senderIncome = $('#sender_income').val() || '-';
+            const senderTop = $('#sender_top').val() || '-';
+            const hours = parseHours($('#hours').val());
+
+            $('#previewAsker').text(asker);
+            $('#previewSender').text(`${senderIncome}:${senderTop}`);
+            $('#previewHours').text(hours.length ? hours.join(', ') : '-');
+        }
+
+        form.on('input', updatePreview);
+        updatePreview();
+
+        form.on('submit', function (event) {
+            event.preventDefault();
+
+            const submitButton = form.find('button[type="submit"]');
+            submitButton.attr('disabled', true);
+            state.text('Salvando...');
+
+            axios.post(settingsApp.data('save-url'), {
+                asker: $('#asker').val(),
+                sender_income: $('#sender_income').val(),
+                sender_top: $('#sender_top').val(),
+                hours: $('#hours').val(),
+            }).then(function (response) {
+                const saved = response.data.config;
+
+                $('#asker').val(saved.asker);
+                $('#sender_income').val(saved.sender_income);
+                $('#sender_top').val(saved.sender_top);
+                $('#hours').val(saved.hours_text);
+                updatePreview();
+                state.text('Salvo');
+                toastr.success('Configurações salvas com sucesso.');
+            }).catch(function (error) {
+                state.text('Erro');
+                toastr.error(error.response?.data?.error || 'Erro ao salvar configurações.');
+            }).finally(function () {
+                submitButton.attr('disabled', false);
+            });
+        });
+    });
+</script>
+</body>
+</html>

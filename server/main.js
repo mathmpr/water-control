@@ -12,10 +12,10 @@ const net = require('net');
 const http = require('http');
 const ws = require('websocket-stream');
 const moment = require('moment-timezone');
-const fs = require('fs');
 
 const User = require('./models/User');
 const EventLogs = require('./models/EventLogs');
+const ConfigService = require('./services/ConfigService');
 
 const knexConfig = require('./knexfile');
 const db = knex(knexConfig.development);
@@ -144,10 +144,10 @@ async function publishers() {
     let user = await User.query().findOne({token: secretKey});
     const hour = moment().tz("America/Sao_Paulo").format("HH:mm");
 
-    let config = JSON.parse(fs.readFileSync('./config.json').toString());
+    const config = await ConfigService.getConfig();
     hours = config.hours;
-    askerConfig = config.asker;
-    senderConfig = config.sender;
+    askerConfig = config.raw.asker;
+    senderConfig = config.raw.sender;
 
     if (hours.includes(hour) && user) {
         await toggleWaterFn(true, user, 'auto');

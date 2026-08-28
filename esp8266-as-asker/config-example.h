@@ -2,6 +2,7 @@ const char* mqttServer = "255.255.255.0";
 const int mqttPort = 1883;
 const char* secretKey = "";
 const char* iam = "asker";
+const bool relayActiveLow = true;
 
 struct Credentials {
     char ssid[20];

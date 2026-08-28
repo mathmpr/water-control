@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env-example
+node_modules
+npm-debug.log*
+dev.sqlite3
+db/seeds/data/users.js
+public/uploads/*
+!public/uploads/.gitkeep
+.git
+.idea

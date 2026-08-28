@@ -29,3 +29,18 @@ To start the server, run the following command:
 npm init-db
 npm start
 ```
+
+## Docker
+
+From the project root, build and start the server with SQLite persisted in a Docker volume:
+
+```bash
+JWT_SECRET=change-me SECRET_KEY=change-me docker compose up -d --build
+```
+
+The container exposes:
+
+- `1883`: MQTT TCP broker.
+- `1888`: HTTP app and MQTT WebSocket broker.
+
+SQLite is stored at `/data/dev.sqlite3` inside the container through the `water-control-data` volume. On startup, the container runs migrations and idempotent seeds before starting `main.js`.

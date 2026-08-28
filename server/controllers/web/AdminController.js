@@ -1,5 +1,16 @@
 const EventLogs = require('../../models/EventLogs');
+const ConfigService = require('../../services/ConfigService');
 const moment = require('moment-timezone');
+
+function requireAdmin(req, res) {
+    if (!req.user.roles.includes('admin')) {
+        res.status(403);
+        res.redirect('/admin');
+        return false;
+    }
+
+    return true;
+}
 
 module.exports = {
     index: async (req, res) => {
@@ -18,6 +29,18 @@ module.exports = {
         res.render('admin/index', {
             user: req.user,
             logs,
+        });
+    },
+    settings: async (req, res) => {
+        if (!requireAdmin(req, res)) {
+            return;
+        }
+
+        const config = await ConfigService.getConfig();
+
+        res.render('admin/settings', {
+            user: req.user,
+            config,
         });
     },
 };

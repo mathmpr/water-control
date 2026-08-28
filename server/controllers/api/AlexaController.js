@@ -4,11 +4,7 @@ const {OpenAI} = require('openai');
 const mqtt = require('mqtt');
 const moment = require("moment-timezone");
 
-let client = new OpenAI({
-    organization: process.env.OPENAI_ORGANIZATION,
-    project: process.env.OPENAI_PROJECT,
-    apiKey: process.env.OPENAI_API_KEY
-});
+let openAiClient = null;
 
 const mqttClient = mqtt.connect('mqtt://localhost:1883', {
     clientId: 'alexa',
@@ -31,6 +27,56 @@ function sendResponse(res, text, shouldEndSession = true) {
             shouldEndSession: shouldEndSession
         }
     }));
+}
+
+function getOpenAiClient() {
+    if (!process.env.OPENAI_API_KEY) {
+        return null;
+    }
+
+    if (!openAiClient) {
+        openAiClient = new OpenAI({
+            organization: process.env.OPENAI_ORGANIZATION,
+            project: process.env.OPENAI_PROJECT,
+            apiKey: process.env.OPENAI_API_KEY
+        });
+    }
+
+    return openAiClient;
+}
+
+async function resolveCommand(text) {
+    const normalized = String(text || '').trim().toLowerCase();
+
+    if (normalized.includes('desligar')) {
+        return 'off';
+    }
+
+    if (normalized.includes('ligar')) {
+        return 'on';
+    }
+
+    const client = getOpenAiClient();
+
+    if (!client) {
+        return 'undefined';
+    }
+
+    const completion = await client.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+            {
+                role: "system",
+                content: "Você é um assistente que converte comandos de voz. Um JSON será passado, sendo uma lista de comandos 'key': 'value'. O comando de vós poderá ser igual ou muito similar a uma das keys no JSON. Encontre a key mais similar possivel e retorne apenas o valor correspondente. Se não encontrar nenhuma key similar, retorne apenas com o valor 'undefined'"
+            },
+            {
+                role: "user",
+                content: `Comando de voz: "${text}\nJson: {"ligar a bomba": "on", "desligar a bomba": "off"}`
+            }
+        ]
+    });
+
+    return completion.choices[0].message.content.trim().toLowerCase();
 }
 
 module.exports = {
@@ -78,21 +124,7 @@ module.exports = {
         }
 
         if (slots) {
-            let completion = await client.chat.completions.create({
-                model: "gpt-4o",
-                messages: [
-                    {
-                        role: "system",
-                        content: "Você é um assistente que converte comandos de voz. Um JSON será passado, sendo uma lista de comandos 'key': 'value'. O comando de vós poderá ser igual ou muito similar a uma das keys no JSON. Encontre a key mais similar possivel e retorne apenas o valor correspondente. Se não encontrar nenhuma key similar, retorne apenas com o valor 'undefined'"
-                    },
-                    {
-                        role: "user",
-                        content: `Comando de voz: "${slots.FullLiteral.value}\nJson: {"ligar a bomba": "on", "desligar a bomba": "off"}`
-                    }
-                ]
-            });
-
-            let command = completion.choices[0].message.content.trim().toLowerCase();
+            let command = await resolveCommand(slots.FullLiteral.value);
 
             if (['on', 'off'].includes(command)) {
                 mqttClient.publish(onOffWaterTopic, `${user.token}:${user.username}:alexa:${(command === 'on' ? '1' : '0')}`);

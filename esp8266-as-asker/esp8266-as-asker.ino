@@ -1,7 +1,9 @@
-#include <ESP8266WiFi.h>
 #include <Arduino.h>
-#include <AsyncMqttClient.h>
+#include <ESP8266WiFi.h>
+#include <MiniCore/HttpFirmwareSource.h>
+#include <MiniCore/MiniCore.h>
 #include <SimpleTimer.h>
+
 #include "config.h"
 
 #define LED_PIN 2
@@ -9,18 +11,29 @@
 #define TX 1
 #define REAL_TX_PIN 1
 
-WiFiEventHandler gotIpEventHandler;
-WiFiEventHandler disconnectedEventHandler;
+constexpr bool SERIAL_DEBUG = true;
+
+constexpr const char* CURRENT_VERSION = "1.0.1";
+constexpr const char* DEVICE_ID = "water-control-asker-esp8266-01";
+constexpr const char* MANIFEST_URL = "http://192.168.200.14:3000/firmware/esp8266/manifest.json";
+constexpr const char* PENDING_OTA_VERSION_KEY = "pending_ota_version";
+constexpr unsigned long UPDATE_CHECK_INTERVAL_MS = 30000;
 
 SimpleTimer keepAliveTimer;
 SimpleTimer mqttConnectTimer;
 SimpleTimer wifiConnectTimer;
 
+MiniCore::ArduinoWifiHandler wifi;
+MiniCore::ArduinoMqttClient mqttClient;
+MiniCore::HttpFirmwareSource firmwareSource(MANIFEST_URL, DEVICE_ID);
+MiniCore::Esp8266OtaDriver otaDriver;
+MiniCore::RemoteUpdater updater(firmwareSource, otaDriver, CURRENT_VERSION);
+MiniCore::ArduinoPersistentStorage storage;
+
 bool enabledWaterPump = false;
 bool sendItToServer = false;
 bool valueToSend = false;
 int maxEnabledTime = 20;
-int passedTimeInEnable = 0;
 int numberOfFailedKeepAlives = 0;
 int maxFailedKeepAlives = 30;
 
@@ -31,9 +44,7 @@ volatile unsigned long lastLocalToggle = 0;
 const unsigned long ISR_DEBOUNCE_MS = 50;
 const unsigned long IGNORE_MQTT_AFTER_LOCAL_MS = 500;
 
-char ssid[32];
-char password[65];
-char payload[84];
+char payload[128];
 
 const char* toggleWaterTopic = "toggle/water";
 const char* onOffWaterTopic = "on_off/water";
@@ -43,9 +54,9 @@ const char* keepAliveTopic = "keep/alive";
 bool connected = false;
 bool connecting = false;
 bool mqttConnected = false;
+bool otaBlockedByVersionMismatch = false;
 unsigned long pumpStart = 0;
-
-AsyncMqttClient mqttClient;
+unsigned long lastUpdateCheckMs = 0;
 
 void onLed() {
   digitalWrite(LED_PIN, LOW);
@@ -55,15 +66,40 @@ void offLed() {
   digitalWrite(LED_PIN, HIGH);
 }
 
-void print(const char* message) {
-  if (TX != REAL_TX_PIN) {
-    Serial.println(message);
+int relayLevel(bool enabled) {
+  if (relayActiveLow) {
+    return enabled ? LOW : HIGH;
   }
+  return enabled ? HIGH : LOW;
+}
+
+void print(const char* message) {
+  Serial.println(message);
+}
+
+void validatePendingOtaState() {
+  String pendingVersion;
+  if (!storage.loadString(PENDING_OTA_VERSION_KEY, pendingVersion)) {
+    return;
+  }
+
+  if (pendingVersion == CURRENT_VERSION) {
+    storage.remove(PENDING_OTA_VERSION_KEY);
+    print("OTA version confirmed.");
+    return;
+  }
+
+  otaBlockedByVersionMismatch = true;
+  print("OTA version mismatch after reboot. OTA disabled to avoid update loop.");
+  snprintf(payload, sizeof(payload), "Current: %s Pending: %s", CURRENT_VERSION, pendingVersion.c_str());
+  print(payload);
 }
 
 void toggleWaterPump(bool newStatus) {
   enabledWaterPump = newStatus;
-  digitalWrite(TX, enabledWaterPump ? LOW : HIGH);
+  if (!(SERIAL_DEBUG && TX == REAL_TX_PIN)) {
+    digitalWrite(TX, relayLevel(enabledWaterPump));
+  }
   if (!enabledWaterPump) {
     pumpStart = 0;
   }
@@ -72,10 +108,10 @@ void toggleWaterPump(bool newStatus) {
 void publishStatus(bool status, const char* type) {
   sendItToServer = false;
   snprintf(payload, sizeof(payload), "%s:%s:%s:%s", secretKey, iam, type, (status ? "1" : "0"));
-  mqttClient.publish(onOffWaterTopic, 0, false, payload);
+  mqttClient.publish(onOffWaterTopic, payload, 0, false);
 }
 
-void onMqttConnect(bool sessionPresent) {
+void onMqttConnect() {
   print("MQTT On!");
   onLed();
   mqttConnected = true;
@@ -86,27 +122,28 @@ void onMqttConnect(bool sessionPresent) {
   }
 }
 
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+void onMqttDisconnect() {
   print("MQTT Off!");
   offLed();
   mqttConnected = false;
 }
 
-void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties,
-                   size_t len, size_t index, size_t total) {
-
+void onMqttMessage(const String& topic, const uint8_t* data, size_t len) {
   String msg;
-  for (size_t i = 0; i < len; i++) msg += payload[i];
+  msg.reserve(len);
+  for (size_t i = 0; i < len; i++) {
+    msg += static_cast<char>(data[i]);
+  }
 
-  print(topic);
+  print(topic.c_str());
   print(msg.c_str());
 
-  if (strcmp(topic, toggleWaterTopic) == 0) {
-    if (millis() - (unsigned long)lastLocalToggle < IGNORE_MQTT_AFTER_LOCAL_MS) {
+  if (topic == toggleWaterTopic) {
+    if (millis() - static_cast<unsigned long>(lastLocalToggle) < IGNORE_MQTT_AFTER_LOCAL_MS) {
       return;
     }
     toggleWaterPump(msg.toInt() ? true : false);
-  } else if (strcmp(topic, getConfigTopic) == 0) {
+  } else if (topic == getConfigTopic) {
     maxEnabledTime = msg.toInt();
   }
 }
@@ -115,19 +152,21 @@ void connectToWifi() {
   if (connected || connecting) {
     return;
   }
+
   print("Try to connect!");
   connecting = true;
-  bool found = false;
-  int n = WiFi.scanNetworks();
-  snprintf(payload, sizeof(payload), "Number of wifi's: %d", n);
+
+  const int networks = wifi.scanNetworks();
+  snprintf(payload, sizeof(payload), "Number of wifi's: %d", networks);
   print(payload);
-  if (n != 0) {
-    for (int i = 0; i < n; ++i) {
-      for(int j = 0; j < size; j++) {
-        strncpy(ssid, credentials[j].ssid, sizeof(ssid));
-        strncpy(password, credentials[j].password, sizeof(password));
-        if (WiFi.SSID(i) == ssid) {
-          WiFi.begin(ssid, password);
+
+  bool found = false;
+  if (networks > 0) {
+    for (int networkIndex = 0; networkIndex < networks; ++networkIndex) {
+      const String scannedSsid = wifi.scannedSsid(networkIndex);
+      for (int credentialIndex = 0; credentialIndex < size; credentialIndex++) {
+        if (scannedSsid == credentials[credentialIndex].ssid) {
+          wifi.connectStation(credentials[credentialIndex].ssid, credentials[credentialIndex].password);
           found = true;
           break;
         }
@@ -136,9 +175,10 @@ void connectToWifi() {
         break;
       }
       yield();
-    }  
+    }
   }
-  WiFi.scanDelete();
+
+  wifi.clearScanResults();
   print("Delete scan");
   yield();
   connecting = false;
@@ -155,16 +195,27 @@ void IRAM_ATTR handleButton() {
 }
 
 void connectMqtt() {
-  if (connected && !mqttConnected) {
-    mqttClient.connect();
+  if (!connected || mqttConnected) {
+    return;
+  }
+
+  if (mqttClient.connect(DEVICE_ID)) {
+    onMqttConnect();
+  }
+}
+
+void syncMqttState() {
+  mqttClient.handle();
+  if (mqttConnected && !mqttClient.isConnected()) {
+    onMqttDisconnect();
   }
 }
 
 void publishKeepAlive() {
-  if (mqttClient.connected()) {
+  if (mqttClient.isConnected()) {
     snprintf(payload, sizeof(payload), "%s:%s", secretKey, iam);
-    uint16_t packetId = mqttClient.publish(keepAliveTopic, 0, false, payload);
-    numberOfFailedKeepAlives += (packetId == 0);
+    mqttClient.publish(keepAliveTopic, payload, 0, false);
+    numberOfFailedKeepAlives = 0;
   } else {
     numberOfFailedKeepAlives++;
   }
@@ -173,17 +224,63 @@ void publishKeepAlive() {
   }
 }
 
-void setup() {
+void keepRuntimeAliveDuringOta(size_t, size_t) {
+  wifi.handle();
+  mqttClient.handle();
+  ESP.wdtFeed();
+  delay(1);
+}
 
+void checkForUpdates() {
+  if (!connected || otaBlockedByVersionMismatch) {
+    return;
+  }
+
+  MiniCore::OtaResult result = updater.update();
+  print("OTA result:");
+  Serial.print(MiniCore::toString(result.error));
+  Serial.print(" - ");
+  Serial.println(result.message);
+
+  if (result.decision == MiniCore::OtaDecision::Updated) {
+    storage.saveString(PENDING_OTA_VERSION_KEY, result.toVersion);
+    print("Restarting into new firmware.");
+    delay(250);
+    ESP.restart();
+  }
+}
+
+void checkForUpdatesLoop() {
+  const unsigned long now = millis();
+  if (now - lastUpdateCheckMs < UPDATE_CHECK_INTERVAL_MS) {
+    return;
+  }
+
+  lastUpdateCheckMs = now;
+  checkForUpdates();
+}
+
+void waitForInitialWifi(unsigned long timeoutMs) {
+  const unsigned long startedAt = millis();
+  while (!connected && millis() - startedAt < timeoutMs) {
+    wifi.handle();
+    yield();
+    delay(50);
+  }
+}
+
+void setup() {
   pinMode(LED_PIN, OUTPUT);
   offLed();
 
-  if (TX == REAL_TX_PIN) {
+  Serial.begin(9600);
+  delay(1000);
+  storage.begin("water_ota");
+  validatePendingOtaState();
+
+  if (!(SERIAL_DEBUG && TX == REAL_TX_PIN)) {
     pinMode(TX, OUTPUT);
-    digitalWrite(TX, HIGH);
-  } else {
-    Serial.begin(9600);
-    delay(1000);
+    digitalWrite(TX, relayLevel(false));
   }
 
   print("Starting");
@@ -191,27 +288,25 @@ void setup() {
   pinMode(RX, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(RX), handleButton, FALLING);
 
-  mqttClient.onConnect(onMqttConnect);
-  mqttClient.onDisconnect(onMqttDisconnect);
+  mqttClient.configure(mqttServer, mqttPort);
   mqttClient.onMessage(onMqttMessage);
-  mqttClient.setServer(mqttServer, mqttPort);
+  updater.onProgress(keepRuntimeAliveDuringOta);
 
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-
+  wifi.setMode(MiniCore::WifiMode::Station);
   WiFi.setAutoReconnect(false);
   WiFi.persistent(false);
 
-  gotIpEventHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP& event) {
+  wifi.onGotIp([](IPAddress) {
     onLed();
     connected = true;
     connecting = false;
     print("Got IP");
   });
 
-  disconnectedEventHandler = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected& event) {
+  wifi.onDisconnected([]() {
     offLed();
     connected = false;
+    connecting = false;
     print("Disconnected");
   });
 
@@ -220,18 +315,22 @@ void setup() {
   wifiConnectTimer.setInterval(12500, connectToWifi);
 
   connectToWifi();
+  waitForInitialWifi(10000);
+  checkForUpdates();
+  lastUpdateCheckMs = millis();
 
   ESP.wdtDisable();
   ESP.wdtEnable(WDTO_8S);
 }
 
 void loop() {
+  wifi.handle();
+  syncMqttState();
 
   keepAliveTimer.run();
   mqttConnectTimer.run();
   wifiConnectTimer.run();
-
-  /* auto turn off handling */
+  checkForUpdatesLoop();
 
   if (enabledWaterPump && pumpStart == 0) {
     pumpStart = millis();
@@ -247,8 +346,6 @@ void loop() {
     pumpStart = 0;
   }
 
-  /* button handling */
-
   if (pressed) {
     pressed = false;
     delay(10);
@@ -261,7 +358,7 @@ void loop() {
         sendItToServer = true;
         valueToSend = enabledWaterPump;
       }
-    }    
+    }
   }
 
   ESP.wdtFeed();

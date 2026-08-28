@@ -12,5 +12,6 @@ router.get('/sign-in', signedMiddleware, SignController.signIn);
 router.get('/sign-up', signedMiddleware, SignController.signUp);
 
 router.get('/admin', authMiddleware, AdminController.index);
+router.get('/admin/settings', authMiddleware, AdminController.settings);
 
 module.exports = router;

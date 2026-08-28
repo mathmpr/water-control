@@ -1,83 +1,56 @@
-<html lang="pt">
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
 <head>
-    <title>Water Control</title>
-    <%- include('../common/head.ejs') %>
-    <style>
-        .card-img {
-            width: 80px;
-            height: 80px;
-            object-fit: cover;
-            border-radius: 50%;
-        }
-
-        #onWaterPump[disabled] {
-            opacity: 0.6;
-        }
-
-        table {
-            border-collapse: separate;
-            border-spacing: 0;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-
-        * {
-            user-select: none;
-        }
-
-        #info {
-            width: 100%;
-        }
-
-        @media (max-width: 768px) {
-            .table, .table thead, .table tbody, .table th, .table td, .table tr {
-                display: block;
-            }
-
-            .table thead {
-                display: none; /* esconde cabeçalho */
-            }
-
-            .table tr {
-                margin-bottom: 12px;
-                border: 1px solid #ddd;
-                border-radius: 12px;
-                padding: 10px;
-                background: #fff;
-            }
-
-            .table td {
-                border: none;
-                display: flex;
-                justify-content: space-between;
-                padding: 6px 10px;
-            }
-
-            .table td::before {
-                content: attr(data-label);
-                font-weight: bold;
-                margin-right: 8px;
-                color: #555;
-            }
-        }
-    </style>
+    <%- include('../common/head.ejs', {title: 'Water Control'}) %>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 </head>
-<body class="bg-light">
+<body class="app-view">
 <%- include('common/nav.ejs', {title: 'Water - Logs', user}) %>
-<div class="container" style="margin-top: 40px;">
-
-    <% if (user.roles.includes('user')) { %>
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2></h2>
-            <a id="onWaterPump" class="btn btn-primary">Ligar a bomba</a>
+<div class="main-content">
+    <div class="page-head">
+        <div>
+            <h1 class="page-title">Logs e status</h1>
+            <p class="page-subtitle">Acompanhe os eventos da bomba, sensores e comunicação MQTT.</p>
         </div>
-    <% } %>
+        <% if (user.roles.includes('user')) { %>
+            <button id="onWaterPump" class="btn btn-primary" type="button">Ligar a bomba</button>
+        <% } %>
+    </div>
 
-    <div class="row">
-        <div class="col-12">
-            <table class="table table-striped table-hover align-middle shadow-sm rounded">
-                <thead class="table-dark">
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-md-4">
+            <div class="stat-card pump-card">
+                <div class="stat-label">Bomba</div>
+                <div id="pumpStatus" class="stat-value">Sincronizando</div>
+                <div class="stat-meta">Estado atual informado pelo broker</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="stat-card">
+                <div class="stat-label">Ping asker</div>
+                <div class="stat-value stat-value-sm asker">-</div>
+                <div class="stat-meta">ESP8266 do relé</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="stat-card">
+                <div class="stat-label">Ping sender</div>
+                <div class="stat-value stat-value-sm sender">-</div>
+                <div class="stat-meta">ESP32 dos sensores</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Eventos recentes</h2>
+                <p class="panel-subtitle">Últimos acionamentos registrados no sistema.</p>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-finora align-middle mb-0">
+                <thead>
                 <tr>
                     <% if (user.roles.includes('admin')) { %>
                         <th scope="col">Quem?</th>
@@ -91,7 +64,7 @@
                 </thead>
                 <tbody>
                 <% logs.forEach(function(log, index) { %>
-                    <tr>
+                    <tr class="log-row">
                         <% if (user.roles.includes('admin')) { %>
                             <td data-label="Quem?"><strong><%= log.user.name %></strong></td>
                         <% } %>
@@ -141,15 +114,10 @@
                 <% }) %>
                 </tbody>
             </table>
-            <div id="info" class="mt-3 p-3 mb-3 bg-light border rounded shadow-sm">
-                <p class="mb-1"><strong>Ping {asker}:</strong> <span class="asker text-primary"></span></p>
-                <!--p class="mb-1"><strong>Dc {asker}:</strong> <span class="asker-dc text-primary"></span></p-->
-                <p class="mb-0"><strong>Ping {sender}:</strong> <span class="sender text-primary"></span></p>
-                <!--p class="mb-0"><strong>Dc {sender}:</strong> <span class="sender-dc text-primary"></span></p-->
-            </div>
         </div>
     </div>
 </div>
+</main>
 
 <%- include('../common/end.ejs') %>
 <script>
@@ -172,10 +140,9 @@
         let onWaterPump = $('#onWaterPump');
         onWaterPump.attr('disabled', true);
 
-        let senderSpan = $('#info .sender');
-        // let senderSpanDc = $('#info .sender-dc');
-        let askerSpan = $('#info .asker');
-        // let askerSpanDc = $('#info .asker-dc');
+        let senderSpan = $('.sender');
+        let askerSpan = $('.asker');
+        let pumpStatus = $('#pumpStatus');
 
         client = mqtt.connect("<%= isLocal ? "ws://localhost:1888" : "wss://water.mathmpr.com" %>");
 
@@ -184,24 +151,22 @@
                 let data = JSON.parse(message.toString());
                 status = data.status;
                 senderSpan.text(data.senderPing);
-                // senderSpanDc.text(data.senderDc);
                 askerSpan.text(data.askerPing);
-                // askerSpanDc.text(data.askerDc);
                 if (status) {
                     onWaterPump.text('Desligar a bomba');
+                    pumpStatus.text('Ligada').removeClass('text-secondary text-danger').addClass('text-success');
                 } else {
                     onWaterPump.text('Ligar a bomba');
+                    pumpStatus.text('Desligada').removeClass('text-secondary text-success').addClass('text-danger');
                 }
             } else if (topic === onKeepAliveTopic) {
                 let data = JSON.parse(message.toString());
                 senderSpan.text(data.senderPing);
-                // senderSpanDc.text(data.senderDc);
                 askerSpan.text(data.askerPing);
-                // askerSpanDc.text(data.askerDc);
             } else if (topic === newLogAddedTopic) {
                 let log = JSON.parse(message.toString());
                 let tableBody = $('table tbody');
-                let newRow = `<tr>
+                let newRow = `<tr class="log-row">
                         <% if (user.roles.includes('admin')) { %>
                             <td data-label="Quem?"><strong>${log.user.name}</strong></td>
                         <% } %>

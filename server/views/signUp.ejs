@@ -1,26 +1,31 @@
-<html lang="pt">
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="dark">
 <head>
-    <title>Sign-up</title>
-    <%- include('./common/head.ejs') %>
+    <%- include('./common/head.ejs', {title: 'Acesso | Water Control'}) %>
 </head>
-<body class="bg-light">
-<div class="container mt-5">
-    <div class="row justify-content-center">
-        <div class="col-md-6">
-
-            <div class="card shadow rounded-4 border-0">
-                <div class="card-body p-4">
-                    <h3 class="card-title text-center mb-4">Criar Conta</h3>
-                    <p class="text-center">Está ação foi permanentemente desabilitada. Se precisar de uma conta de utilizador, entre em contato com <b>Matheus Prado Rodrigues</b> pessoalmente ou no e-mail <a href="mailto:matheusprador@gmail.com">matheusprador@gmail.com</a>.</p>
-                    <div class="text-center mt-3">
-                        <a href="/sign-in" class="text-decoration-none">Já tem uma conta? Entrar</a>
-                    </div>
+<body>
+<section class="login-view">
+    <div class="login-shell login-shell-wide">
+        <div class="login-card">
+            <div class="brand-lockup">
+                <span class="brand-mark" aria-hidden="true">W</span>
+                <div>
+                    <div class="brand-name">Water Control</div>
+                    <div class="brand-caption">Automação da bomba</div>
                 </div>
             </div>
 
+            <h1 class="login-title">Acesso restrito</h1>
+            <p class="login-subtitle">
+                A criação pública de contas está desabilitada. Para solicitar acesso, entre em contato com
+                <strong>Matheus Prado Rodrigues</strong> pelo e-mail
+                <a href="mailto:matheusprador@gmail.com">matheusprador@gmail.com</a>.
+            </p>
+
+            <a href="/sign-in" class="btn btn-primary w-100">Voltar para entrada</a>
         </div>
     </div>
-</div>
+</section>
 <%- include('common/end.ejs') %>
 </body>
 </html>

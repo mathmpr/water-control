@@ -1,19 +1,67 @@
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="/admin"><%= title %></a>
-        <div class="ms-auto d-flex align-items-center">
-            <span class="text-white me-3"><%= user.name %> - alexa2fa: <%= user.alexa_2fa %></span>
-            <a id="sign-out" class="btn btn-outline-light btn-sm" href="/api/sign-out">Sair</a>
+<aside class="sidebar">
+    <div class="sidebar-inner d-flex flex-column">
+        <a class="sidebar-brand" href="/admin">
+            <span class="brand-mark" aria-hidden="true">W</span>
+            <span class="brand-text">
+                <span class="brand-name">Water Control</span>
+                <span class="brand-caption">Automação da bomba</span>
+            </span>
+        </a>
+
+        <div class="sidebar-section-title">Principal</div>
+        <nav class="sidebar-menu">
+            <a class="nav-link <%= title === 'Water - Logs' ? 'active' : '' %>" href="/admin">
+                <span class="nav-icon" aria-hidden="true">≋</span>
+                <span class="nav-label">Logs e status</span>
+            </a>
+            <% if (user.roles.includes('admin')) { %>
+                <a class="nav-link <%= title === 'Configurações' ? 'active' : '' %>" href="/admin/settings">
+                    <span class="nav-icon" aria-hidden="true">⚙</span>
+                    <span class="nav-label">Configurações</span>
+                </a>
+            <% } %>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="profile-box">
+                <div class="profile-avatar"><%= user.name ? user.name.charAt(0).toUpperCase() : 'U' %></div>
+                <div class="profile-copy flex-grow-1 overflow-hidden">
+                    <div class="profile-name text-truncate"><%= user.name %></div>
+                    <div class="profile-role text-truncate">Alexa 2FA: <%= user.alexa_2fa %></div>
+                </div>
+                <a id="sign-out" class="icon-btn" href="/api/sign-out" title="Sair" aria-label="Sair">↪</a>
+            </div>
         </div>
     </div>
-</nav>
-<style>
-    body {
-        padding-top: 70px;
-    }
-</style>
+</aside>
+
+<main class="main">
+    <header class="topbar">
+        <div class="d-flex align-items-center gap-2">
+            <button id="mobileMenuBtn" class="icon-btn mobile-menu-btn" type="button" title="Menu" aria-label="Menu">☰</button>
+            <div class="topbar-title"><%= title %></div>
+        </div>
+        <div class="topbar-actions">
+            <span class="topbar-user text-truncate"><%= user.name %></span>
+        </div>
+    </header>
 <script>
     document.addEventListener("DOMContentLoaded", function () {
+        $('#mobileMenuBtn').on('click', function () {
+            document.body.classList.toggle('sidebar-mobile-open');
+        });
+
+        $(document).on('click', function (event) {
+            if (
+                window.innerWidth < 992
+                && document.body.classList.contains('sidebar-mobile-open')
+                && !event.target.closest('.sidebar')
+                && !event.target.closest('#mobileMenuBtn')
+            ) {
+                document.body.classList.remove('sidebar-mobile-open');
+            }
+        });
+
         let signOut = $('a#sign-out');
         signOut.on('click', function (e) {
             e.preventDefault();
