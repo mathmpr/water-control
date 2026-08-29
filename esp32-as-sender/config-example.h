@@ -3,6 +3,13 @@ const int mqttPort = 1883;
 const char* secretKey = "";
 const char* iam = "sender";
 
+constexpr const char* CURRENT_VERSION = "1.0.0";
+constexpr const char* DEVICE_ID = "device-id";
+constexpr const char* MANIFEST_URL = "firmware-url";
+constexpr const char* PENDING_OTA_VERSION_KEY = "pending_ota_version";
+constexpr unsigned long UPDATE_CHECK_INTERVAL_MS = 30000;
+constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
+
 struct Credentials {
     char ssid[20];
     char password[15];

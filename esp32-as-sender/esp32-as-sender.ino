@@ -11,13 +11,6 @@
 
 #define LED_BUILTIN 2
 
-constexpr const char* CURRENT_VERSION = "1.0.3";
-constexpr const char* DEVICE_ID = "water-control-sender-esp32-01";
-constexpr const char* MANIFEST_URL = "http://192.168.200.14:3000/firmware/esp32/manifest.json";
-constexpr const char* PENDING_OTA_VERSION_KEY = "pending_ota_version";
-constexpr unsigned long UPDATE_CHECK_INTERVAL_MS = 30000;
-constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
-
 SimpleTimer waterDetectTimer;
 SimpleTimer waterIncomeTimer;
 SimpleTimer keepAliveTimer;

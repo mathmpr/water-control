@@ -13,12 +13,6 @@
 
 constexpr bool SERIAL_DEBUG = true;
 
-constexpr const char* CURRENT_VERSION = "1.0.1";
-constexpr const char* DEVICE_ID = "water-control-asker-esp8266-01";
-constexpr const char* MANIFEST_URL = "http://192.168.200.14:3000/firmware/esp8266/manifest.json";
-constexpr const char* PENDING_OTA_VERSION_KEY = "pending_ota_version";
-constexpr unsigned long UPDATE_CHECK_INTERVAL_MS = 30000;
-
 SimpleTimer keepAliveTimer;
 SimpleTimer mqttConnectTimer;
 SimpleTimer wifiConnectTimer;
