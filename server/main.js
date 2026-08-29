@@ -118,6 +118,19 @@ let alreadySetIncome = false;
 let firstActive = false;
 let oldValueStatus;
 
+async function getAutomationUser() {
+    const userByToken = secretKey ? await User.query().findOne({token: secretKey}) : null;
+    const user = userByToken || await User.query().findOne({username: 'server'});
+
+    if (!user) {
+        console.warn('Automation skipped: no user found for SECRET_KEY or username "server".');
+    } else if (!userByToken) {
+        console.warn('Automation using fallback user "server" because SECRET_KEY does not match any user token.');
+    }
+
+    return user;
+}
+
 async function toggleWaterFn(value, user, triggerType, income = null, detect = null, addLog = true) {
     value = !!value;
     if (!value) {
@@ -141,7 +154,7 @@ async function toggleWaterFn(value, user, triggerType, income = null, detect = n
 }
 
 async function publishers() {
-    let user = await User.query().findOne({token: secretKey});
+    let user = await getAutomationUser();
     const hour = moment().tz("America/Sao_Paulo").format("HH:mm");
 
     const config = await ConfigService.getConfig();
@@ -180,7 +193,7 @@ setInterval(async () => {
         ticks = 0;
         firstActive = {
             date: new Date(),
-            user: await User.query().findOne({token: secretKey})
+            user: await getAutomationUser()
         };
     } else if (waterPumpStatus) {
         const now = new Date();
