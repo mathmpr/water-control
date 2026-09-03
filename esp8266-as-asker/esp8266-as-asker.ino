@@ -11,7 +11,7 @@
 #define TX 1
 #define REAL_TX_PIN 1
 
-constexpr bool SERIAL_DEBUG = true;
+constexpr bool SERIAL_DEBUG = false;
 
 SimpleTimer keepAliveTimer;
 SimpleTimer mqttConnectTimer;
@@ -68,7 +68,9 @@ int relayLevel(bool enabled) {
 }
 
 void print(const char* message) {
-  Serial.println(message);
+  if (SERIAL_DEBUG) {
+    Serial.println(message);
+  }
 }
 
 void validatePendingOtaState() {
@@ -90,6 +92,7 @@ void validatePendingOtaState() {
 }
 
 void toggleWaterPump(bool newStatus) {
+  print("pump action trigger");
   enabledWaterPump = newStatus;
   if (!(SERIAL_DEBUG && TX == REAL_TX_PIN)) {
     digitalWrite(TX, relayLevel(enabledWaterPump));
@@ -267,8 +270,10 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   offLed();
 
-  Serial.begin(9600);
-  delay(1000);
+  if (SERIAL_DEBUG) {
+    Serial.begin(9600);
+    delay(1000);
+  }
   storage.begin("water_ota");
   validatePendingOtaState();
 
