@@ -19,7 +19,7 @@ SimpleTimer wifiConnectTimer;
 
 MiniCore::ArduinoWifiHandler wifi;
 MiniCore::ArduinoMqttClient mqttClient;
-MiniCore::HttpFirmwareSource firmwareSource(MANIFEST_URL, DEVICE_ID);
+MiniCore::HttpFirmwareSource firmwareSource(MANIFEST_URL, FAMILY_ID);
 MiniCore::Esp32OtaDriver otaDriver;
 MiniCore::RemoteUpdater updater(firmwareSource, otaDriver, CURRENT_VERSION);
 MiniCore::ArduinoPersistentStorage storage;
@@ -179,7 +179,7 @@ void connectMqtt() {
   }
 
   print("Connecting MQTT.");
-  if (mqttClient.connect(DEVICE_ID)) {
+  if (mqttClient.connect(MQTT_CLIENT_ID)) {
     onMqttConnect();
   }
 }
