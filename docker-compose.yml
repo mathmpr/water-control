@@ -5,7 +5,12 @@ services:
     container_name: water-control-server
     restart: unless-stopped
     environment:
-      DATABASE_PATH: /data/dev.sqlite3
+      DB_CLIENT: mysql2
+      DB_HOST: ${DB_HOST:?Configure o host MySQL externo}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE:-water_control}
+      DB_USERNAME: ${DB_USERNAME:?Configure o usuario MySQL}
+      DB_PASSWORD: ${DB_PASSWORD:?Configure a senha MySQL}
       JWT_SECRET: ${JWT_SECRET:-change-this-jwt-secret}
       SECRET_KEY: ${SECRET_KEY:-change-this-device-secret}
       IAM: server

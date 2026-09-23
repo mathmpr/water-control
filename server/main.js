@@ -18,7 +18,7 @@ const EventLogs = require('./models/EventLogs');
 const ConfigService = require('./services/ConfigService');
 
 const knexConfig = require('./knexfile');
-const db = knex(knexConfig.development);
+const db = knex(knexConfig[process.env.NODE_ENV || 'development']);
 
 Model.knex(db);
 

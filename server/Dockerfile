@@ -14,7 +14,6 @@ RUN chmod +x docker-entrypoint.sh \
     && mkdir -p /data public/uploads
 
 ENV NODE_ENV=production \
-    DATABASE_PATH=/data/dev.sqlite3 \
     TZ=America/Sao_Paulo
 
 EXPOSE 1883 1888

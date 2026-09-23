@@ -11,7 +11,44 @@ permissions:
   packages: write
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4.6
+        env:
+          MYSQL_ROOT_PASSWORD: ci-disposable-only
+          MYSQL_DATABASE: verify_water
+          MYSQL_USER: ci
+          MYSQL_PASSWORD: ci-disposable-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm test
+        name: Verify migrations and behavior on MySQL
+        env:
+          TEST_MYSQL: '1'
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_DATABASE: verify_water
+          DB_USERNAME: ci
+          DB_PASSWORD: ci-disposable-only
   build:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -31,4 +68,3 @@ jobs:
           file: ./server/Dockerfile
           push: true
           tags: ghcr.io/mathmpr/water-control:sha-${{ github.sha }}
-
